@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>广告管理平台</title>
+    <!-- 样式依赖 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- 图表库 -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.2/dist/echarts.min.js"></script>
+    <!-- Stripe.js -->
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        .nav-section { background: #f8f9fa; padding: 1rem; }
+        .main-content { padding: 2rem; min-height: 80vh; }
+        .ad-card { transition: transform 0.3s; cursor: pointer; }
+        .ad-card:hover { transform: translateY(-5px); }
+        #paymentForm .card-number { letter-spacing: 3px; }
+        .loading {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <!-- 加载指示器 -->
+    <div class="loading" id="loading">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
+    <!-- 导航栏 -->
+    <nav class="nav-section shadow-sm">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">广告平台</h4>
+                <div id="navLinks">
+                    <a href="#purchase" class="btn btn-link">购买广告</a>
+                    <a href="#payment" class="btn btn-link">账户充值</a>
+                    <a href="#history" class="btn btn-link">交易记录</a>
+                    <button id="logoutBtn" class="btn btn-outline-danger">退出登录</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <div class="main-content">
+        <!-- 广告购买模块 -->
+        <section id="purchase" class="mb-5">
+            <h3 class="mb-4"><i class="fas fa-bullhorn me-2"></i>创建新广告</h3>
+            <div class="row">
+                <div class="col-md-8">
+                    <form id="adForm">
+                        <div class="mb-3">
+                            <label class="form-label">广告标题</label>
+                            <input type="text" class="form-control" name="title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">广告内容</label>
+                            <textarea class="form-control" name="content" rows="3" required></textarea>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">每日预算（元）</label>
+                                <input type="number" class="form-control" name="daily_budget" min="100" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">投放开始日期</label>
+                                <input type="date" class="form-control" name="start_date" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary mt-3">提交审核</button>
+                    </form>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5>审核状态</h5>
+                            <div id="auditStatus" class="text-muted">尚未提交</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 支付模块 -->
+        <section id="payment" class="mb-5">
+            <h3 class="mb-4"><i class="fas fa-wallet me-2"></i>账户充值</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">当前余额：¥<span id="balance">0.00</span></h5>
+                            <form id="paymentForm">
+                                <div class="mb-3">
+                                    <label class="form-label">充值金额</label>
+                                    <input type="number" class="form-control" name="amount" min="100" step="100" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">信用卡信息</label>
+                                    <div id="card-element" class="form-control"></div>
+                                    <div id="card-errors" class="text-danger mt-2"></div>
+                                </div>
+                                <button type="submit" class="btn btn-success w-100">立即充值</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 交易记录 -->
+        <section id="history" class="mb-5">
+            <h3 class="mb-4"><i class="fas fa-history me-2"></i>充值记录</h3>
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>金额</th>
+                        <th>状态</th>
+                    </tr>
+                </thead>
+                <tbody id="transactionList">
+                    <!-- 动态加载数据 -->
+                </tbody>
+            </table>
+        </section>
+
+        <!-- 广告管理 -->
+        <section id="management" class="mb-5">
+            <h3 class="mb-4"><i class="fas fa-ad me-2"></i>广告管理</h3>
+            <div class="row" id="adList">
+                <!-- 广告卡片动态生成 -->
+            </div>
+        </section>
+
+        <!-- 数据统计 -->
+        <section id="analytics" class="mb-5">
+            <h3 class="mb-4"><i class="fas fa-chart-line me-2"></i>广告效果</h3>
+            <div id="chart" style="height:400px;"></div>
+        </section>
+
+        <!-- 发票管理 -->
+        <section id="invoice">
+            <h3 class="mb-4"><i class="fas fa-receipt me-2"></i>发票申请</h3>
+            <form id="invoiceForm" class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">公司名称</label>
+                    <input type="text" class="form-control" name="company_name" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">税号</label>
+                    <input type="text" class="form-control" name="tax_id" required>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">生成发票</button>
+                </div>
+            </form>
+        </section>
+    </div>
+
+    <!-- 登录模态框 -->
+    <div class="modal fade" id="loginModal" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="loginModalLabel">用户登录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="loginForm">
+                        <div class="mb-3">
+                            <label class="form-label">邮箱</label>
+                            <input type="email" class="form-control" name="email" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">密码</label>
+                            <input type="password" class="form-control" name="password" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">登录</button>
+                    </form>
+                    <p class="text-center mt-3">还没有账号？<button id="showRegisterBtn" class="btn btn-link">注册</button></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 注册模态框 -->
+    <div class="modal fade" id="registerModal" tabindex="-1" aria-labelledby="registerModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="registerModalLabel">用户注册</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="registerForm">
+                        <div class="mb-3">
+                            <label class="form-label">用户名</label>
+                            <input type="text" class="form-control" name="username" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">邮箱</label>
+                            <input type="email" class="form-control" name="email" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">密码</label>
+                            <input type="password" class="form-control" name="password" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">注册</button>
+                    </form>
+                    <p class="text-center mt-3">已有账号？<button id="showLoginBtn" class="btn btn-link">登录</button></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 广告表单提交逻辑
+        document.getElementById('adForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+            const data = {
+                title: formData.get('title'),
+                content: formData.get('content'),
+                daily_budget: parseFloat(formData.get('daily_budget')),
+                start_date: formData.get('start_date')
+            };
+
+            const result = await api.createAd(data);
+            if (result.success) {
+                alert('广告创建成功');
+                updateAdList();
+            } else {
+                alert(result.error);
+            }
+        });
+
+        // 支付表单提交逻辑
+        const stripe = Stripe('your-publishable-key'); // 替换为您的 Stripe 发布密钥
+        const elements = stripe.elements();
+        const cardElement = elements.create('card');
+        cardElement.mount('#card-element');
+
+        document.getElementById('paymentForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const amount = parseFloat(this.querySelector('input[name="amount"]').value);
+            const { paymentMethod, error } = await stripe.createPaymentMethod({
+                type: 'card',
+                card: cardElement
+            });
+
+            if (error) {
+                document.getElementById('card-errors').textContent = error.message;
+            } else {
+                const result = await api.processPayment(amount, paymentMethod.id);
+                if (result.success) {
+                    alert('充值成功');
+                    updateUserBalance();
+                    updateTransactionList();
+                } else {
+                    alert(result.error);
+                }
+            }
+        });
+
+        // 发票表单提交逻辑
+        document.getElementById('invoiceForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+            const data = {
+                company_name: formData.get('company_name'),
+                tax_id: formData.get('tax_id'),
+                amount: parseFloat(document.getElementById('balance').textContent)
+            };
+
+            const result = await api.createInvoice(data);
+            if (result.success) {
+                alert('发票创建成功');
+            } else {
+                alert(result.error);
+            }
+        });
+
+        // 退出登录按钮逻辑
+        document.getElementById('logoutBtn').addEventListener('click', function() {
+            auth.logout();
+        });
+
+        // 显示登录模态框
+        const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+        const registerModal = new bootstrap.Modal(document.getElementById('registerModal'));
+
+        if (!auth.isAuthenticated()) {
+            loginModal.show();
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const email = this.querySelector('input[name="email"]').value;
+            const password = this.querySelector('input[name="password"]').value;
+
+            const result = await auth.login(email, password);
+            if (result.success) {
+                loginModal.hide();
+                updateUserBalance();
+                updateAdList();
+                updateTransactionList();
+            } else {
+                alert(result.error);
+            }
+        });
+
+        document.getElementById('registerForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const username = this.querySelector('input[name="username"]').value;
+            const email = this.querySelector('input[name="email"]').value;
+            const password = this.querySelector('input[name="password"]').value;
+
+            const result = await auth.register(username, email, password);
+            if (result.success) {
+                registerModal.hide();
+                loginModal.show();
+            } else {
+                alert(result.error);
+            }
+        });
+
+        document.getElementById('showRegisterBtn').addEventListener('click', function() {
+            loginModal.hide();
+            registerModal.show();
+        });
+
+        document.getElementById('showLoginBtn').addEventListener('click', function() {
+            registerModal.hide();
+            loginModal.show();
+        });
+
+        // 更新用户余额
+        async function updateUserBalance() {
+            const balanceData = await api.getUserBalance();
+            document.getElementById('balance').textContent = balanceData.balance.toFixed(2);
+        }
+
+        // 更新交易记录
+        async function updateTransactionList() {
+            const transactions = await api.getTransactions();
+            const transactionList = document.getElementById('transactionList');
+
+            if (transactions.length === 0) {
+                transactionList.innerHTML = '<tr><td colspan="3" class="text-center">暂无交易记录</td></tr>';
+                return;
+            }
+
+            transactionList.innerHTML = transactions.map(transaction => `
+                <tr>
+                    <td>${transaction.created_at}</td>
+                    <td>¥${transaction.amount}</td>
+                    <td>${transaction.status}</td>
+                </tr>
+            `).join('');
+        }
+
+        // 页面加载时更新数据
+        if (auth.isAuthenticated()) {
+            updateUserBalance();
+            updateAdList();
+            updateTransactionList();
+        }
+    </script>
+
+    <!-- 脚本 -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 认证模块
+        const auth = {
+            // 存储JWT令牌
+            setToken(token) {
+                localStorage.setItem('token', token);
+            },
+
+            // 获取令牌
+            getToken() {
+                return localStorage.getItem('token');
+            },
+
+            // 移除令牌（登出）
+            logout() {
+                localStorage.removeItem('token');
+                window.location.reload();
+            },
+
+            // 检查用户是否已登录
+            isAuthenticated() {
+                return !!this.getToken();
+            },
+
+            // 登录方法
+            async login(email, password) {
+                showLoading(true);
+                try {
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        this.setToken(data.access_token);
+                        return { success: true, user: data.user };
+                    } else {
+                        return { success: false, error: data.message };
+                    }
+                } catch (error) {
+                    return { success: false, error: 'Network error' };
+                } finally {
+                    showLoading(false);
+                }
+            },
+
+            // 注册方法
+            async register(username, email, password) {
+                showLoading(true);
+                try {
+                    const response = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, email, password })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        return { success: true };
+                    } else {
+                        return { success: false, error: data.message };
+                    }
+                } catch (error) {
+                    return { success: false, error: 'Network error' };
+                } finally {
+                    showLoading(false);
+                }
+            }
+        };
+
+        // API服务模块
+        const api = {
+            // 获取认证头
+            getAuthHeaders() {
+                const token = auth.getToken();
+                return token ? { 'Authorization': `Bearer ${token}` } : {};
+            },
+
+            // 获取广告列表
+            async getAds() {
+                showLoading(true);
+                try {
+                    const response = await fetch('/api/ads', {
+                        headers: this.getAuthHeaders()
+                    });
+
+                    if (!response.ok) {
+                        if (response.status === 401) {
+                            auth.logout(); // 未授权，强制登出
+                        }
+                        throw new Error('Failed to fetch ads');
+                    }
+
+                    return await response.json();
+                } catch (error) {
+                    console.error('Error fetching ads:', error);
+                    return [];
+                } finally {
+                    showLoading(false);
+                }
+            },
+
+            // 创建新广告
+            async createAd(data) {
+                showLoading(true);
+                try {
+                    const response = await fetch('/api/ads', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...this.getAuthHeaders()
+                        },
+                        body: JSON.stringify(data)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to create ad');
+                    }
+
+                    return await response.json();
+                } catch (error) {
+                    console.error('Error creating ad:', error);
+                    return { success: false, error: error.message };
+                } finally {
+                    showLoading(false);
+                }
+            },
+
+            // 处理充值
+            async processPayment(amount, paymentMethod) {
+                showLoading(true);
+                try {
+                    const response = await fetch('/api/payment/charge', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...this.getAuthHeaders()
+                        },
+                        body: JSON.stringify({ amount, payment_method: paymentMethod })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Payment failed');
+                    }
+
+                    return await response.json();
+                } catch (error) {
+                    console.error('Error processing payment:', error);
+                    return { success: false, error: error.message };
+                } finally {
+                    showLoading(false);
+                }
+            },
+
+            // 获取交易记录
+            async getTransactions() {
+                showLoading(true);
+                try {
+                    const response = await fetch('/api/transactions', {
+                        headers: this.getAuthHeaders()
+                    });
+
+                    if (!response.ok) {
+                        if (response.status === 401) {
+                            auth.logout();
+                        }
+                        throw new Error('Failed to fetch transactions');
+                    }
+
+                    return await response.json();
+                } catch (error) {
+                    console.error('Error fetching transactions:', error);
+                    return [];
+                } finally {
+                    showLoading(false);
+                }
+            },
+
+            // 获取用户余额
+            async getUserBalance() {
+                showLoading(true);
+                try {
+                    const response = await fetch('/api/user/balance', {
+                        headers: this.getAuthHeaders()
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch user balance');
+                    }
+
+                    return await response.json();
+                } catch (error) {
+                    console.error('Error fetching user balance:', error);
+                    return { balance: 0 };
+                } finally {
+                    showLoading(false);
+                }
+            },
+
+            // 创建发票
+            async createInvoice(data) {
+                showLoading(true);
+                try {
+                    const response = await fetch('/api/invoices', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...this.getAuthHeaders()
+                        },
+                        body: JSON.stringify(data)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to create invoice');
+                    }
+
+                    return await response.json();
+                } catch (error) {
+                    console.error('Error creating invoice:', error);
+                    return { success: false, error: error.message };
+                } finally {
+                    showLoading(false);
+                }
+            }
+        };
+
+        // 显示/隐藏加载指示器
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'flex' : 'none';
+        }
+
+        // 更新广告列表
+        async function updateAdList() {
+            const ads = await api.getAds();
+            const adList = document.getElementById('adList');
+
+            if (ads.length === 0) {
+                adList.innerHTML = '<div class="col-12"><div class="alert alert-info">暂无广告，请创建新广告</div></div>';
+                return;
+            }
+
+            adList.innerHTML = ads.map(ad => `
+                <div class="col-md-4 mb-3">
+                    <div class="card ad-card">
+                        <div class="card-body">
+                            <h5 class="card-title">${ad.title}</h5>
+                            <p class="text-muted">状态：${ad.status}</p>
+                            <p>每日预算：¥${ad.daily_budget}</p>
+                            <p>开始日期：${ad.start_date}</p>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="editAd(${ad.id})">编辑</button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteAd(${ad.id})">删除</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 更新交易记录
+        async function updateTransactionList() {
+            const transactions = await api.getTransactions();
+            const tbody = document.getElementById('transactionList');
+
+            if (transactions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center">暂无交易记录</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = transactions.map(t => `
+                <tr>
+                    <td>${t.created_at}</td>
+                    <td>¥${t.amount.toFixed(2)}</td>
+                    <td><span class="badge bg-${t.status === 'success' ? 'success' : 'danger'}">${t.status}</span></td>
+                </tr>
+            `).join('');
+        }
+
+        // 更新余额
+        async function updateBalance() {
+            const { balance } = await api.getUserBalance();
+            document.getElementById('balance').textContent = balance.toFixed(2);
+        }
+
+        // 初始化图表
+        function initChart() {
+            const chart = echarts.init(document.getElementById('chart'));
+            chart.setOption({
+                title: {
+                    text: '广告效果统计'
+                },
+                tooltip: {
+                    trigger: 'axis'
+                },
+                xAxis: {
+                    type: 'category',
+                    data: ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+                },
+                yAxis: {
+                    type: 'value'
+                },
+                series: [{
+                    name: '点击量',
+                    data: [120, 200, 150, 80, 70, 110, 130],
+                    type: 'bar'
+                }]
+            });
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', async function() {
+            // 初始化Stripe
+            const stripe = Stripe('pk_test_your_stripe_key'); // 替换为您的Stripe公钥
+            const elements = stripe.elements();
+            const cardElement = elements.create('card');
+            cardElement.mount('#card-element');
+
+            // 监听卡片输入错误
+            cardElement.on('change', function(event) {
+                const displayError = document.getElementById('card-errors');
+                if (event.error) {
+                    displayError.textContent = event.error.message;
+                } else {
+                    displayError.textContent = '';
+                }
+            });
+
+            // 初始化图表
+            initChart();
+
+            // 检查用户是否已登录
+            if (auth.isAuthenticated()) {
+                // 已登录，加载数据
+                await updateAdList();
+                await updateTransactionList();
+                await updateBalance();
+            } else {
+                // 未登录，显示登录模态框
+                const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+                loginModal.show();
+            }
+
+            // 广告提交表单处理
+            document.getElementById('adForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                const formData = new FormData(this);
+                const adData = {
+                    title: formData.get('title'),
+                    content: formData.get('content'),
+                    daily_budget: parseFloat(formData.get('daily_budget')),
+                    start_date: formData.get('start_date')
+                };
+
+                try {
+                    const result = await api.createAd(adData);
+
+                    if (result.message) {
+                        alert('广告已提交审核');
+                        await updateAdList();
+                        this.reset();
+                    } else {
+                        alert(`提交失败: ${result.error}`);
+                    }
+                } catch (error) {
+                    alert('提交失败，请重试');
+                }
+            });
+
+            // 支付表单处理
+            document.getElementById('paymentForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                const amount = parseFloat(this.querySelector('input[name="amount"]').value);
+
+                try {
+                    // 使用Stripe.js创建支付令牌
+                    const { token, error } = await stripe.createToken(cardElement);
+
+                    if (error) {
+                        throw new Error(error.message);
+                    }
+
+                    // 调用后端API处理支付
+                    const result = await api.processPayment(amount, token.id);
+
+                    if (result.message) {
+                        document.getElementById('balance').textContent = result.new_balance.toFixed(2);
+                        await updateTransactionList();
+                        alert(`充值成功！当前余额：¥${result.new_balance.toFixed(2)}`);
+                        this.reset();
+                    } else {
+                        alert(`支付失败: ${result.error}`);
+                    }
+                } catch (error) {
+                    console.error('Payment error:', error);
+                    alert(`支付错误: ${error.message}`);
+                }
+            });
+
+            // 发票表单处理
+            document.getElementById('invoiceForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                const formData = new FormData(this);
+                const invoiceData = {
+                    company_name: formData.get('company_name'),
+                    tax_id: formData.get('tax_id'),
+                    amount: parseFloat(document.getElementById('balance').textContent)
+                };
+
+                try {
+                    const result = await api.createInvoice(invoiceData);
+
+                    if (result.message) {
+                        alert('发票已生成，我们将尽快邮寄给您');
+                        this.reset();
+                    } else {
+                        alert(`生成失败: ${result.error}`);
+                    }
+                } catch (error) {
+                    alert('生成失败，请重试');
+                }
+            });
+
+            // 登录表单处理
+            document.getElementById('loginForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                const email = this.querySelector('input[name="email"]').value;
+                const password = this.querySelector('input[name="password"]').value;
+
+                const result = await auth.login(email, password);
+
+                if (result.success) {
+                    const loginModal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
+                    loginModal.hide();
+
+                    // 加载用户数据
+                    await updateAdList();
+                    await updateTransactionList();
+                    await updateBalance();
+
+                    alert(`欢迎回来，${result.user.username}`);
+                } else {
+                    alert(`登录失败: ${result.error}`);
+                }
+            });
+
+            // 注册表单处理
+            document.getElementById('registerForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                const username = this.querySelector('input[name="username"]').value;
+                const email = this.querySelector('input[name="email"]').value;
+                const password = this.querySelector('input[name="password"]').value;
+
+                const result = await auth.register(username, email, password);
+
+                if (result.success) {
+                    alert('注册成功，请登录');
+                    const registerModal = bootstrap.Modal.getInstance(document.getElementById('registerModal'));
+                    registerModal.hide();
+
+                    const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+                    loginModal.show();
+                } else {
+                    alert(`注册失败: ${result.error}`);
+                }
+            });
+
+            // 显示注册模态框
+            document.getElementById('showRegisterBtn').addEventListener('click', function() {
+                const loginModal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
+                loginModal.hide();
+
+                const registerModal = new bootstrap.Modal(document.getElementById('registerModal'));
+                registerModal.show();
+            });
+
+            // 显示登录模态框
+            document.getElementById('showLoginBtn').addEventListener('click', function() {
+                const registerModal = bootstrap.Modal.getInstance(document.getElementById('registerModal'));
+                registerModal.hide();
+
+                const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+                loginModal.show();
+            });
+
+            // 退出登录
+            document.getElementById('logoutBtn').addEventListener('click', function() {
+                auth.logout();
+            });
+        });
+
+        // 编辑广告（待实现）
+        function editAd(id) {
+            alert(`编辑广告 ${id}`);
+            // 实现编辑功能
+        }
+
+        // 删除广告（待实现）
+        function deleteAd(id) {
+            if (confirm('确定要删除这个广告吗？')) {
+                alert(`删除广告 ${id}`);
+                // 实现删除功能
+            }
+        }
+    </script>
+</body>
+</html>
