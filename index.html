@@ -703,7 +703,7 @@
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', async function() {
             // 初始化Stripe
-            const stripe = Stripe('pk_test_your_stripe_key'); // 替换为您的Stripe公钥
+            const stripe = Stripe('pk_test_51RRjVDQrqRWFg1iG5zw0kkK9sF3vGX8q9B8h5txU7hmYbwKniC2s6LZZKYVWlZX0D9HjNqJGQlAzLPLruBwAGPRb00DqgfrXLy'); // 替换为您的Stripe公钥
             const elements = stripe.elements();
             const cardElement = elements.create('card');
             cardElement.mount('#card-element');
