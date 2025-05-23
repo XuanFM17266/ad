@@ -1,0 +1,6 @@
+flask==2.3.2
+flask-sqlalchemy==3.0.5
+flask-jwt-extended==4.4.4
+werkzeug==2.3.6
+stripe==6.7.0
+python-dotenv==1.0.0
