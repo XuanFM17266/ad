@@ -18,7 +18,7 @@ db = SQLAlchemy(app)
 jwt = JWTManager(app)
 
 # 配置 Stripe
-stripe.api_key = "sk_test_your_stripe_key"  # 替换为您的 Stripe 测试密钥
+stripe.api_key = "sk_test_51RRjVDQrqRWFg1iGjmwOujyTZUKMoLXvUlszB9yNeLbGA1A4PvrmmbPB5JD4IK0mkOUOrVyVWF8o5W2Q6hwKCsVF00p2xqcVL1"  # 替换为您的 Stripe 测试密钥
 
 
 # 模型定义
