@@ -44,3 +44,12 @@ flask run --port 5000
 cd frontend
 npm install
 npm run dev
+# 构建镜像（需提前配置Docker环境）
+docker-compose build
+
+# 启动服务集群
+docker-compose up -d
+
+# 访问服务
+前端服务：http://localhost:3000
+API文档：http://localhost:5000/swagger
